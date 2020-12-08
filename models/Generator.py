@@ -1,5 +1,6 @@
 from torch import nn
 
+
 class Generator(nn.Module):
     def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0):
         super(Generator, self).__init__()

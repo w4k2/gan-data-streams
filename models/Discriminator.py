@@ -1,5 +1,6 @@
 from torch import nn
 
+
 class Discriminator(nn.Module):
     def __init__(self, feature_map_size=64, color_channels=3, n_gpu=0):
         super(Discriminator, self).__init__()

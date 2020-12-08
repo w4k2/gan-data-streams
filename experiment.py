@@ -1,6 +1,11 @@
 def run():
 
-    n_gpu = 0
+    # Parameters
+    latent_vector_length = 100
+    feature_map_size = 64
+    color_channels = 3
+    n_gpu = 1
 
-if __name__=="__main__":
+
+if __name__ == "__main__":
     run()
