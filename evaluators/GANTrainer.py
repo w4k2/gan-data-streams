@@ -8,7 +8,6 @@ import torch
 class GANTrainer:
 
     def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0):
-
         self._latent_vector_length = latent_vector_length
 
         self._device = torch.device("cuda:0" if (torch.cuda.is_available() and n_gpu > 0) else "cpu")
@@ -55,7 +54,6 @@ class GANTrainer:
             nn.init.constant_(model.bias.data, 0)
 
     def train(self, dataloader, num_epochs=5):
-
         # Lists to keep track of progress
         img_list = []
         generator_losses = []
@@ -135,3 +133,5 @@ class GANTrainer:
                     img_list.append(utils.make_grid(fake, padding=2, normalize=True))
 
                 iterations += 1
+
+        return img_list
