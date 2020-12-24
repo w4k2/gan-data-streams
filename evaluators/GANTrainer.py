@@ -29,7 +29,7 @@ class GANTrainer:
         self._beta1 = 0.5
 
         # Initialize BCELoss function
-        self._criterion = nn.BCELoss()
+        self._criterion = nn.NLLLoss()
 
         # Create batch of latent vectors that we will use to visualize
         #  the progression of the generator
@@ -74,9 +74,9 @@ class GANTrainer:
                 # Format batch
                 real_cpu = data[0].to(self._device)
                 b_size = real_cpu.size(0)
-                label = torch.full((b_size,), self._real_label, dtype=torch.float, device=self._device)
+                label = torch.full((b_size,), self._real_label, dtype=torch.float, device=self._device).long()
                 # Forward pass real batch through D
-                output = self._discriminator(real_cpu).view(-1)
+                output = torch.squeeze(self._discriminator(real_cpu))
                 # Calculate loss on all-real batch
                 discriminator_real_error = self._criterion(output, label)
                 # Calculate gradients for D in backward pass
@@ -90,7 +90,7 @@ class GANTrainer:
                 fake = self._generator(noise)
                 label.fill_(self._fake_label)
                 # Classify all fake batch with D
-                output = self._discriminator(fake.detach()).view(-1)
+                output = torch.squeeze(self._discriminator(fake.detach()))
                 # Calculate D's loss on the all-fake batch
                 discriminator_fake_error = self._criterion(output, label)
                 # Calculate the gradients for this batch
@@ -107,7 +107,7 @@ class GANTrainer:
                 self._generator.zero_grad()
                 label.fill_(self._real_label)  # fake labels are real for generator cost
                 # Since we just updated D, perform another forward pass of all-fake batch through D
-                output = self._discriminator(fake).view(-1)
+                output = torch.squeeze(self._discriminator(fake))
                 # Calculate G's loss based on this output
                 generator_error = self._criterion(output, label)
                 # Calculate gradients for G

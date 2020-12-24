@@ -22,8 +22,8 @@ class Discriminator(nn.Module):
             nn.BatchNorm2d(feature_map_size * 8),
             nn.LeakyReLU(0.2, inplace=True),
             # state size. (feature_map_size*8) x 4 x 4
-            nn.Conv2d(feature_map_size * 8, 1, 4, 1, 0, bias=False),
-            nn.Sigmoid()
+            nn.Conv2d(feature_map_size * 8, 2, 4, 1, 0, bias=False),
+            nn.LogSoftmax(dim=1)
         )
 
     def forward(self, input):
