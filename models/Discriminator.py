@@ -5,7 +5,7 @@ class Discriminator(nn.Module):
     def __init__(self, feature_map_size=64, color_channels=3, n_gpu=0):
         super(Discriminator, self).__init__()
         self.n_gpu = n_gpu
-        self.layers = nn.Sequential(
+        self._model = nn.Sequential(
             # input is (color_channels) x 64 x 64
             nn.Conv2d(color_channels, feature_map_size, 4, 2, 1, bias=False),
             nn.LeakyReLU(0.2, inplace=True),
@@ -26,5 +26,12 @@ class Discriminator(nn.Module):
             nn.LogSoftmax(dim=1)
         )
 
+        self._layers = list(self._model._modules.values())
+        self._n_layers = len(self._layers)
+        self._layer_activations = None
+
     def forward(self, input):
-        return self.layers(input)
+        self._layer_activations = [input] + [None] * self._n_layers
+        for l_idx in range(self._n_layers):
+            self._layer_activations[l_idx+1] = self._layers[l_idx].forward(self._layer_activations[l_idx])
+        return self._layer_activations[self._n_layers]
