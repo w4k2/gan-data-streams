@@ -1,4 +1,6 @@
+from utils import utils
 from torch import nn
+import torch
 
 
 class Generator(nn.Module):
@@ -31,9 +33,47 @@ class Generator(nn.Module):
         self._layers = list(self._model._modules.values())
         self._n_layers = len(self._layers)
         self._layer_activations = None
+        self._relevance_scores = None
 
     def forward(self, input):
         self._layer_activations = [input] + [None] * self._n_layers
         for l_idx in range(self._n_layers):
             self._layer_activations[l_idx+1] = self._layers[l_idx].forward(self._layer_activations[l_idx])
         return self._layer_activations[self._n_layers]
+
+    def calculate_relevance(self, discriminator_pixel_relevance):
+
+        self._relevance_scores = [None] * self._n_layers + [discriminator_pixel_relevance]
+
+        for l_idx in range(1, self._n_layers)[::-1]:
+            # Loop is not applicable to the pixel layer
+            self._layer_activations[l_idx] = self._layer_activations[l_idx].data.requires_grad_(True)
+
+            if isinstance(self._layers[l_idx], torch.nn.ConvTranspose2d):
+                def rho(p): return p
+                def incr(z): return z
+
+                if l_idx <= 4:
+                    def rho(p): return p + 0.25 * p.clamp(min=0)
+                    def incr(z): return z + 1e-9
+                if 5 <= l_idx <= 7:
+                    def rho(p): return p
+                    def incr(z): return z + 1e-9 + 0.25 * ((z ** 2).mean() ** .5).data
+                if l_idx >= 8:
+                    def rho(p): return p
+                    def incr(z): return z + 1e-9
+
+                # Four steps according to LRP paper
+                #  G. Montavon, A. Binder, S. Lapuschkin, W. Samek, K.-R. Müller
+                # Layer-wise Relevance Propagation: An Overview
+                # in Explainable AI, Springer LNCS, vol. 11700, 2019
+                z_k = incr(utils.newlayer(self._layers[l_idx], rho).forward(self._layer_activations[l_idx]))  # step 1
+                s_k = (self._layer_activations[l_idx + 1] / z_k).data  # step 2
+                (z_k * s_k).sum().backward()
+                c_j = self._layer_activations[l_idx].grad  # step 3
+                self._relevance_scores[l_idx] = (self._layer_activations[l_idx] * c_j).data  # step 4
+            else:
+                self._relevance_scores[l_idx] = self._relevance_scores[l_idx+1]
+
+    def apply_dropout(self):
+        pass

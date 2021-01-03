@@ -67,52 +67,71 @@ class GANTrainer:
             for i, data in enumerate(dataloader, 0):
 
                 ############################
-                # (1) Update D network: maximize log(D(x)) + log(1 - D(G(z)))
+                # (1) Update discriminator network: maximize log(D(x)) + log(1 - D(G(z)))
                 ###########################
+
                 # Train with all-real batch
                 self._discriminator.zero_grad()
+
                 # Format batch
                 real_cpu = data[0].to(self._device)
                 b_size = real_cpu.size(0)
                 label = torch.full((b_size,), self._real_label, dtype=torch.float, device=self._device).long()
-                # Forward pass real batch through D
+
+                # Forward pass real batch through discriminator
                 output = torch.squeeze(self._discriminator(real_cpu))
+
                 # Calculate loss on all-real batch
                 discriminator_real_error = self._criterion(output, label)
-                # Calculate gradients for D in backward pass
+
+                # Calculate gradients for discriminator in backward pass
                 discriminator_real_error.backward()
                 D_x = output.mean().item()
 
                 # Train with all-fake batch
                 # Generate batch of latent vectors
                 noise = torch.randn(b_size, self._latent_vector_length, 1, 1, device=self._device)
-                # Generate fake image batch with G
+
+                # Generate fake image batch with generator
                 fake = self._generator(noise)
                 label.fill_(self._fake_label)
-                # Classify all fake batch with D
+
+                # Classify all fake batch with discriminator
                 output = torch.squeeze(self._discriminator(fake.detach()))
-                # Calculate D's loss on the all-fake batch
+
+                # Calculate relevance scores
+                discriminator_pixel_relevance = self._discriminator.get_pixel_layer_relevance()
+                self._generator.calculate_relevance(discriminator_pixel_relevance)
+
+                # Calculate discriminator's loss on the all-fake batch
                 discriminator_fake_error = self._criterion(output, label)
+
                 # Calculate the gradients for this batch
                 discriminator_fake_error.backward()
                 D_G_z1 = output.mean().item()
+
                 # Add the gradients from the all-real and all-fake batches
                 discriminator_error = discriminator_real_error + discriminator_fake_error
-                # Update D
+
+                # Update discriminator
                 self._discriminator_optimizer.step()
 
                 ############################
-                # (2) Update G network: maximize log(D(G(z)))
+                # (2) Update generator network: maximize log(D(G(z)))
                 ###########################
                 self._generator.zero_grad()
                 label.fill_(self._real_label)  # fake labels are real for generator cost
-                # Since we just updated D, perform another forward pass of all-fake batch through D
+
+                # Since we just updated discriminator, perform another forward pass of all-fake batch through it
                 output = torch.squeeze(self._discriminator(fake))
-                # Calculate G's loss based on this output
+
+                # Calculate generators's loss based on this output
                 generator_error = self._criterion(output, label)
+
                 # Calculate gradients for G
                 generator_error.backward()
                 D_G_z2 = output.mean().item()
+
                 # Update G
                 self._generator_optimizer.step()
 
