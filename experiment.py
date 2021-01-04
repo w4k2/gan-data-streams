@@ -10,7 +10,7 @@ def run():
     feature_map_size = 64
     color_channels = 3
     n_gpu = 1
-    num_epochs = 5
+    num_epochs = 1
 
     data_provider = DataProvider()
     data_visualizer = DataVisualizer()

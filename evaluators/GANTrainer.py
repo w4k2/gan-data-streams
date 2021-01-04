@@ -13,7 +13,7 @@ class GANTrainer:
         self._device = torch.device("cuda:0" if (torch.cuda.is_available() and n_gpu > 0) else "cpu")
 
         self._generator = Generator(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
-                                    color_channels=color_channels, n_gpu=n_gpu).to(self._device)
+                                    color_channels=color_channels, n_gpu=n_gpu, device=self._device).to(self._device)
         self._discriminator = Discriminator(feature_map_size=feature_map_size, color_channels=color_channels,
                                             n_gpu=n_gpu).to(self._device)
 
@@ -33,7 +33,7 @@ class GANTrainer:
 
         # Create batch of latent vectors that we will use to visualize
         #  the progression of the generator
-        self._fixed_noise = torch.randn(feature_map_size, latent_vector_length, 1, 1, device=self._device)
+        self._fixed_noise = None
 
         # Establish convention for real and fake labels during training
         self._real_label = 1.
@@ -144,6 +144,8 @@ class GANTrainer:
                 # Save Losses for plotting later
                 generator_losses.append(generator_error.item())
                 discriminator_losses.append(discriminator_error.item())
+
+                self._fixed_noise = torch.randn(b_size, self._latent_vector_length, 1, 1, device=self._device)
 
                 # Check how the generator is doing by saving G's output on fixed_noise
                 if (iterations % 500 == 0) or ((epoch == num_epochs - 1) and (i == len(dataloader) - 1)):
