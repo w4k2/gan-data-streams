@@ -1,18 +1,26 @@
-from torch.utils.data import DataLoader
-import torchvision.transforms as transforms
-import torchvision.datasets as dset
+from data.datasets import Cifar10Dataset, Cifar100Dataset, CelebADataset
+from torch.utils.data import DataLoader, SubsetRandomSampler
 
 
 class DataProvider:
 
-    def get_celeba_dataloader(self, image_size=64, batch_size=128, num_workers=2):
-        dataset = dset.ImageFolder(root='./data/celeba',
-                                   transform=transforms.Compose([
-                                       transforms.Resize(image_size),
-                                       transforms.CenterCrop(image_size),
-                                       transforms.ToTensor(),
-                                       transforms.Normalize((0.5, 0.5, 0.5), (0.5, 0.5, 0.5)),
-                                   ]))
-
-        dataloader = DataLoader(dataset, batch_size=batch_size, shuffle=True, num_workers=num_workers, drop_last=True)
+    def get_cifar10_dataloader(self, batch_size=128):
+        dataset = Cifar10Dataset()
+        dataloader = DataLoader(dataset=dataset.load_dataset(), batch_size=batch_size, shuffle=False, drop_last=True)
         return dataloader
+
+    def get_cifar100_dataloader(self, batch_size=128):
+        dataset = Cifar100Dataset()
+        dataloader = DataLoader(dataset=dataset.load_dataset(), batch_size=batch_size, shuffle=False, drop_last=True)
+        return dataloader
+
+    def get_celeba_dataloaders(self, batch_size=128):
+        dataset = CelebADataset()
+        dataloaders = [
+            DataLoader(dataset=dataset.load_dataset(), batch_size=batch_size, shuffle=False, drop_last=True,
+                       sampler=SubsetRandomSampler(indices=list(range(94509)))),
+            DataLoader(dataset=dataset.load_dataset(), batch_size=batch_size, shuffle=False, drop_last=True,
+                       sampler=SubsetRandomSampler(indices=list(range(94509, 162770)))),
+        ]
+
+        return dataloaders
