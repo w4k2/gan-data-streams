@@ -16,7 +16,7 @@ def run():
     data_provider = DataProvider()
     data_visualizer = DataVisualizer()
     gan_trainer = GANTrainer(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
-                             color_channels=color_channels, n_gpu=n_gpu)
+                             color_channels=color_channels, n_gpu=n_gpu, data_provider=data_provider)
 
     dataloaders = data_provider.get_celeba_dataloaders(batch_size=batch_size)
     img_list = gan_trainer.train(dataloaders=dataloaders, epochs_per_concept=epochs_per_concept)

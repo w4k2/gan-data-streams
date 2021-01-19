@@ -1,4 +1,6 @@
 from models import Generator, Discriminator
+from sklearn.metrics import roc_auc_score
+import torchvision.models as torchmodels
 from torch import nn
 from torch import optim
 from torchvision import utils
@@ -7,19 +9,32 @@ import torch
 
 class GANTrainer:
 
-    def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0):
+    def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0, data_provider=None):
         self._latent_vector_length = latent_vector_length
 
         self._device = torch.device("cuda:0" if (torch.cuda.is_available() and n_gpu > 0) else "cpu")
+        self._data_provider = data_provider
 
         self._generator = Generator(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
                                     color_channels=color_channels, n_gpu=n_gpu, device=self._device).to(self._device)
         self._discriminator = Discriminator(feature_map_size=feature_map_size, color_channels=color_channels,
                                             n_gpu=n_gpu).to(self._device)
 
+        # Classifiers for calculating GAN quality index
+        self._clf_real = torchmodels.resnet18(pretrained=False).to(self._device)
+        self._clf_gan = torchmodels.resnet18(pretrained=False).to(self._device)
+        self._clf_real_linear_layer = nn.Linear(1000, 2).to(self._device)
+        self._clf_real_softmax_layer = nn.LogSoftmax(dim=1)
+        self._clf_gan_linear_layer = nn.Linear(1000, 2).to(self._device)
+        self._clf_gan_softmax_layer = nn.LogSoftmax(dim=1)
+        self._clf_real_criterion = nn.NLLLoss()
+        self._clf_gan_criterion = nn.NLLLoss()
+
         if (self._device.type == 'cuda') and (n_gpu > 1):
             self._generator = nn.DataParallel(self._generator, list(range(n_gpu)))
             self._discriminator = nn.DataParallel(self._discriminator, list(range(n_gpu)))
+            self._clf_real = nn.DataParallel(self._clf_real, list(range(n_gpu)))
+            self._clf_gan = nn.DataParallel(self._clf_gan, list(range(n_gpu)))
 
         self._generator.apply(self.init_weights)
         self._discriminator.apply(self.init_weights)
@@ -28,11 +43,11 @@ class GANTrainer:
         self._learning_rate = 0.0002
         self._beta1 = 0.5
 
-        # Initialize BCELoss function
+        # Initialize NLLLoss function
         self._criterion = nn.NLLLoss()
 
         # Create batch of latent vectors that we will use to visualize
-        #  the progression of the generator
+        # the progression of the generator
         self._fixed_noise = None
 
         # Establish convention for real and fake labels during training
@@ -44,6 +59,13 @@ class GANTrainer:
             optim.Adam(self._discriminator.parameters(), lr=self._learning_rate, betas=(self._beta1, 0.999))
         self._generator_optimizer = \
             optim.Adam(self._generator.parameters(), lr=self._learning_rate, betas=(self._beta1, 0.999))
+        self._clf_real_optimizer = \
+            optim.Adam(self._clf_real.parameters(), lr=self._learning_rate, betas=(self._beta1, 0.999))
+        self._clf_gan_optimizer = \
+            optim.Adam(self._clf_gan.parameters(), lr=self._learning_rate, betas=(self._beta1, 0.999))
+
+        self._clf_gan_auc = None
+        self._auc_scores = []
 
     def init_weights(self, model):
         classname = model.__class__.__name__
@@ -62,8 +84,11 @@ class GANTrainer:
 
         print("Starting Training Loop...")
         # For each epoch
-        for i, dataloader in enumerate(dataloaders):
-            print("Training dataloader for concept: ", i)
+        concept = 0
+
+        for dataloader in dataloaders:
+            concept += 1
+            print("Training dataloader for concept: ", concept)
             for epoch in range(epochs_per_concept):
                 print("Epoch: ", epoch)
                 # For each batch in the dataloader
@@ -78,6 +103,7 @@ class GANTrainer:
 
                     # Format batch
                     real_cpu = data[0].to(self._device)
+                    real_label = data[1].to(self._device)
                     b_size = real_cpu.size(0)
                     label = torch.full((b_size,), self._real_label, dtype=torch.float, device=self._device).long()
 
@@ -150,6 +176,18 @@ class GANTrainer:
 
                     self._fixed_noise = torch.randn(b_size, self._latent_vector_length, 1, 1, device=self._device)
 
+                    # Train real data classifier on a single real batch
+                    self.train_clf_real(real_cpu, real_label)
+                    # Generate batch of images and pass them to train GAN-induced classifier
+                    generated_images = self._generator(self._fixed_noise)
+                    generated_labels = self._clf_real_softmax_layer(self._clf_real_linear_layer(
+                        self._clf_real(generated_images)))
+                    generated_labels = torch.max(generated_labels, 1)[1]
+                    self.train_clf_gan(generated_images, generated_labels, real_cpu, real_label)
+
+                    print("AUC: ", self._clf_gan_auc)
+                    self._auc_scores.append(self._clf_gan_auc)
+
                     # Check how the generator is doing by saving G's output on fixed_noise
                     if (iterations % 500 == 0) or ((epoch == epochs_per_concept - 1) and (i == len(dataloader) - 1)):
                         with torch.no_grad():
@@ -158,4 +196,25 @@ class GANTrainer:
 
                     iterations += 1
 
+        print("GQI scores: ", self._auc_scores)
         return img_list
+
+    def train_clf_real(self, inputs, labels):
+        self._clf_real_optimizer.zero_grad()
+        outputs = self._clf_real_softmax_layer(self._clf_real_linear_layer(self._clf_real(inputs)))
+        loss = self._clf_real_criterion(outputs, torch.max(labels, 1)[1])
+        loss.backward()
+        self._clf_real_optimizer.step()
+
+    def train_clf_gan(self, train_inputs, train_labels, test_inputs, test_labels):
+        with torch.no_grad():
+            outputs = self._clf_gan_softmax_layer(self._clf_gan_linear_layer(self._clf_gan(test_inputs)))
+            _, predicted = torch.max(outputs.data, 1)
+
+        self._clf_gan_auc = roc_auc_score(torch.max(test_labels.cpu(), 1)[1], predicted.cpu())
+
+        self._clf_gan_optimizer.zero_grad()
+        outputs = self._clf_gan_softmax_layer(self._clf_gan_linear_layer(self._clf_gan(train_inputs)))
+        loss = self._clf_gan_criterion(outputs, train_labels)
+        loss.backward()
+        self._clf_gan_optimizer.step()
