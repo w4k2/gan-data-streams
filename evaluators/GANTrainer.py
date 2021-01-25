@@ -1,5 +1,6 @@
 from models import Generator, Discriminator
 from sklearn.metrics import roc_auc_score
+from detectors import DSDM
 import torchvision.models as torchmodels
 from torch import nn
 from torch import optim
@@ -9,11 +10,13 @@ import torch
 
 class GANTrainer:
 
-    def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0, data_provider=None):
+    def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0, data_provider=None,
+                 data_visualizer=None):
         self._latent_vector_length = latent_vector_length
 
         self._device = torch.device("cuda:0" if (torch.cuda.is_available() and n_gpu > 0) else "cpu")
         self._data_provider = data_provider
+        self._data_visualizer = data_visualizer
 
         self._generator = Generator(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
                                     color_channels=color_channels, n_gpu=n_gpu, device=self._device).to(self._device)
@@ -67,6 +70,8 @@ class GANTrainer:
         self._clf_gan_auc = None
         self._auc_scores = []
 
+        self._dsdm = DSDM(drift_detection_level=1.2)
+
     def init_weights(self, model):
         classname = model.__class__.__name__
         if classname.find('Conv') != -1:
@@ -88,6 +93,9 @@ class GANTrainer:
 
         for dataloader in dataloaders:
             concept += 1
+            if concept > 1:
+                self._generator.activate_dropout(True)
+                self._generator.apply_dropout()
             print("Training dataloader for concept: ", concept)
             for epoch in range(epochs_per_concept):
                 print("Epoch: ", epoch)
@@ -185,7 +193,15 @@ class GANTrainer:
                     generated_labels = torch.max(generated_labels, 1)[1]
                     self.train_clf_gan(generated_images, generated_labels, real_cpu, real_label)
 
-                    print("AUC: ", self._clf_gan_auc)
+                    # print("AUC: ", self._clf_gan_auc)
+                    # self._dsdm.add_element(1-self._clf_gan_auc)
+                    #
+                    # if self._dsdm.detected_change():
+                    #     print("########################### Drift detected")
+                    #
+                    # if self._dsdm.detected_stabilization():
+                    #     print("########################### Stabilization detected")
+
                     self._auc_scores.append(self._clf_gan_auc)
 
                     # Check how the generator is doing by saving G's output on fixed_noise
@@ -196,8 +212,9 @@ class GANTrainer:
 
                     iterations += 1
 
-        print("GQI scores: ", self._auc_scores)
-        return img_list
+        # print("GQI scores: ", self._auc_scores)
+        self._data_visualizer.plot_scores(scores=self._auc_scores)
+        self._data_visualizer.plot_generated_figures(img_list=img_list)
 
     def train_clf_real(self, inputs, labels):
         self._clf_real_optimizer.zero_grad()

@@ -1,3 +1,4 @@
+from scipy.ndimage.filters import gaussian_filter1d
 import matplotlib.pyplot as plt
 import matplotlib.animation as animation
 import numpy as np
@@ -17,4 +18,15 @@ class DataVisualizer:
         writer = Writer(fps=15, metadata=dict(artist='Me'), bitrate=1800)
         ani.save('./visualizers/animation1.mp4', writer=writer)
 
+        plt.show()
+
+    def plot_scores(self, scores):
+        x = range(len(scores))
+        y = scores
+
+        y_smooth = gaussian_filter1d(y, sigma=4)
+        plt.plot(x, y_smooth, 'r')
+
+        plt.xlabel("Chunk")
+        plt.ylabel("AUC score")
         plt.show()

@@ -33,7 +33,7 @@ class Generator(nn.Module):
             nn.BatchNorm2d(feature_map_size),
             nn.ReLU(True),
             # state size. (feature_map_size) x 32 x 32
-            self._dropout_layers[4],
+            # self._dropout_layers[4],
             nn.ConvTranspose2d(feature_map_size, color_channels, 4, 2, 1, bias=False),
             nn.Tanh()
             # state size. (color_channels) x 64 x 64
@@ -52,6 +52,7 @@ class Generator(nn.Module):
         self._layer_activations = [input] + [None] * self._n_layers
         for l_idx in range(self._n_layers):
             self._layer_activations[l_idx + 1] = self._layers[l_idx].forward(self._layer_activations[l_idx])
+
         return self._layer_activations[self._n_layers]
 
     def calculate_relevance(self, discriminator_pixel_relevance):
@@ -115,13 +116,20 @@ class Generator(nn.Module):
             normalized_importance -= normalized_importance.min(1, keepdim=True)[0]
             normalized_importance /= normalized_importance.max(1, keepdim=True)[0]
 
-            max_rand = 0.05
-            min_rand = -0.05
+            # max_rand = 0.05
+            # min_rand = -0.05
 
             sample_mask = torch.zeros(normalized_importance.shape, dtype=torch.float, device=self._device)
-            random_mask = (max_rand - min_rand) * torch.rand(normalized_importance.shape, device=self._device) + min_rand
-            random_mask += self._importance_level
-            sample_mask[normalized_importance <= random_mask] = 1.0
+
+            for batch_idx, batch in enumerate(normalized_importance):
+                for channel_idx, channel in enumerate(batch):
+                    mean = torch.mean(channel)
+                    if mean <= self._importance_level:
+                        sample_mask[batch_idx][channel_idx] = 1.0
+
+            # random_mask = (max_rand - min_rand) * torch.rand(normalized_importance.shape, device=self._device) + min_rand
+            # random_mask += self._importance_level
+            # sample_mask[normalized_importance <= random_mask] = 1.0
 
             dropout_layer.set_mask(sample_mask)
 
