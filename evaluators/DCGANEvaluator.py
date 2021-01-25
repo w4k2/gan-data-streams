@@ -1,4 +1,4 @@
-from models import Generator, Discriminator
+from models.DCGAN import Generator, Discriminator
 from sklearn.metrics import roc_auc_score
 from detectors import DSDM
 import torchvision.models as torchmodels
@@ -8,7 +8,7 @@ from torchvision import utils
 import torch
 
 
-class GANTrainer:
+class DCGANEvaluator:
 
     def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0, data_provider=None,
                  data_visualizer=None):
@@ -25,19 +25,19 @@ class GANTrainer:
 
         # Classifiers for calculating GAN quality index
         self._clf_real = torchmodels.resnet18(pretrained=False).to(self._device)
-        self._clf_gan = torchmodels.resnet18(pretrained=False).to(self._device)
+        self._clf_induced = torchmodels.resnet18(pretrained=False).to(self._device)
         self._clf_real_linear_layer = nn.Linear(1000, 2).to(self._device)
         self._clf_real_softmax_layer = nn.LogSoftmax(dim=1)
-        self._clf_gan_linear_layer = nn.Linear(1000, 2).to(self._device)
-        self._clf_gan_softmax_layer = nn.LogSoftmax(dim=1)
+        self._clf_induced_linear_layer = nn.Linear(1000, 2).to(self._device)
+        self._clf_induced_softmax_layer = nn.LogSoftmax(dim=1)
         self._clf_real_criterion = nn.NLLLoss()
-        self._clf_gan_criterion = nn.NLLLoss()
+        self._clf_induced_criterion = nn.NLLLoss()
 
         if (self._device.type == 'cuda') and (n_gpu > 1):
             self._generator = nn.DataParallel(self._generator, list(range(n_gpu)))
             self._discriminator = nn.DataParallel(self._discriminator, list(range(n_gpu)))
             self._clf_real = nn.DataParallel(self._clf_real, list(range(n_gpu)))
-            self._clf_gan = nn.DataParallel(self._clf_gan, list(range(n_gpu)))
+            self._clf_induced = nn.DataParallel(self._clf_induced, list(range(n_gpu)))
 
         self._generator.apply(self.init_weights)
         self._discriminator.apply(self.init_weights)
@@ -64,10 +64,10 @@ class GANTrainer:
             optim.Adam(self._generator.parameters(), lr=self._learning_rate, betas=(self._beta1, 0.999))
         self._clf_real_optimizer = \
             optim.Adam(self._clf_real.parameters(), lr=self._learning_rate, betas=(self._beta1, 0.999))
-        self._clf_gan_optimizer = \
-            optim.Adam(self._clf_gan.parameters(), lr=self._learning_rate, betas=(self._beta1, 0.999))
+        self._clf_induced_optimizer = \
+            optim.Adam(self._clf_induced.parameters(), lr=self._learning_rate, betas=(self._beta1, 0.999))
 
-        self._clf_gan_auc = None
+        self._clf_induced_auc = None
         self._auc_scores = []
 
         self._dsdm = DSDM(drift_detection_level=1.2)
@@ -85,7 +85,7 @@ class GANTrainer:
         img_list = []
         generator_losses = []
         discriminator_losses = []
-        iterations = 0
+        iteration = 0
 
         print("Starting Training Loop...")
         # For each epoch
@@ -93,9 +93,6 @@ class GANTrainer:
 
         for dataloader in dataloaders:
             concept += 1
-            if concept > 1:
-                self._generator.activate_dropout(True)
-                self._generator.apply_dropout()
             print("Training dataloader for concept: ", concept)
             for epoch in range(epochs_per_concept):
                 print("Epoch: ", epoch)
@@ -137,8 +134,8 @@ class GANTrainer:
                     output = torch.squeeze(self._discriminator(fake.detach()))
 
                     # Calculate relevance scores
-                    discriminator_pixel_relevance = self._discriminator.get_pixel_layer_relevance()
-                    self._generator.calculate_relevance(discriminator_pixel_relevance)
+                    # discriminator_pixel_relevance = self._discriminator.get_pixel_layer_relevance()
+                    # self._generator.calculate_relevance(discriminator_pixel_relevance)
 
                     # Calculate discriminator's loss on the all-fake batch
                     discriminator_fake_error = self._criterion(output, label)
@@ -194,23 +191,19 @@ class GANTrainer:
                     self.train_clf_gan(generated_images, generated_labels, real_cpu, real_label)
 
                     # print("AUC: ", self._clf_gan_auc)
-                    # self._dsdm.add_element(1-self._clf_gan_auc)
-                    #
-                    # if self._dsdm.detected_change():
-                    #     print("########################### Drift detected")
-                    #
-                    # if self._dsdm.detected_stabilization():
-                    #     print("########################### Stabilization detected")
+                    self._dsdm.add_element(1 - self._clf_induced_auc)
+                    if self._dsdm.detected_change():
+                        print("Drift detected, chunk id: ", iteration)
 
-                    self._auc_scores.append(self._clf_gan_auc)
+                    self._auc_scores.append(self._clf_induced_auc)
 
                     # Check how the generator is doing by saving G's output on fixed_noise
-                    if (iterations % 500 == 0) or ((epoch == epochs_per_concept - 1) and (i == len(dataloader) - 1)):
+                    if (iteration % 500 == 0) or ((epoch == epochs_per_concept - 1) and (i == len(dataloader) - 1)):
                         with torch.no_grad():
                             fake = self._generator(self._fixed_noise).detach().cpu()
                         img_list.append(utils.make_grid(fake, padding=2, normalize=True))
 
-                    iterations += 1
+                    iteration += 1
 
         # print("GQI scores: ", self._auc_scores)
         self._data_visualizer.plot_scores(scores=self._auc_scores)
@@ -225,13 +218,13 @@ class GANTrainer:
 
     def train_clf_gan(self, train_inputs, train_labels, test_inputs, test_labels):
         with torch.no_grad():
-            outputs = self._clf_gan_softmax_layer(self._clf_gan_linear_layer(self._clf_gan(test_inputs)))
+            outputs = self._clf_induced_softmax_layer(self._clf_induced_linear_layer(self._clf_induced(test_inputs)))
             _, predicted = torch.max(outputs.data, 1)
 
-        self._clf_gan_auc = roc_auc_score(torch.max(test_labels.cpu(), 1)[1], predicted.cpu())
+        self._clf_induced_auc = roc_auc_score(torch.max(test_labels.cpu(), 1)[1], predicted.cpu())
 
-        self._clf_gan_optimizer.zero_grad()
-        outputs = self._clf_gan_softmax_layer(self._clf_gan_linear_layer(self._clf_gan(train_inputs)))
-        loss = self._clf_gan_criterion(outputs, train_labels)
+        self._clf_induced_optimizer.zero_grad()
+        outputs = self._clf_induced_softmax_layer(self._clf_induced_linear_layer(self._clf_induced(train_inputs)))
+        loss = self._clf_induced_criterion(outputs, train_labels)
         loss.backward()
-        self._clf_gan_optimizer.step()
+        self._clf_induced_optimizer.step()

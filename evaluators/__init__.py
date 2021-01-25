@@ -1,1 +1,1 @@
-from .GANTrainer import GANTrainer
+from .DCGANEvaluator import DCGANEvaluator
