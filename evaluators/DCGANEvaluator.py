@@ -1,7 +1,7 @@
 from models.DCGAN import Generator, Discriminator
 from sklearn.metrics import roc_auc_score
 from detectors import DSDM
-import torchvision.models as torchmodels
+import torchvision.models as models
 from torch import nn
 from torch import optim
 from torchvision import utils
@@ -12,32 +12,32 @@ class DCGANEvaluator:
 
     def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0, data_provider=None,
                  data_visualizer=None):
-        self._latent_vector_length = latent_vector_length
 
+        self._latent_vector_length = latent_vector_length
         self._device = torch.device("cuda:0" if (torch.cuda.is_available() and n_gpu > 0) else "cpu")
         self._data_provider = data_provider
         self._data_visualizer = data_visualizer
 
         self._generator = Generator(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
-                                    color_channels=color_channels, n_gpu=n_gpu, device=self._device).to(self._device)
-        self._discriminator = Discriminator(feature_map_size=feature_map_size, color_channels=color_channels,
-                                            n_gpu=n_gpu).to(self._device)
-
-        # Classifiers for calculating GAN quality index
-        self._clf_real = torchmodels.resnet18(pretrained=False).to(self._device)
-        self._clf_induced = torchmodels.resnet18(pretrained=False).to(self._device)
-        self._clf_real_linear_layer = nn.Linear(1000, 2).to(self._device)
-        self._clf_real_softmax_layer = nn.LogSoftmax(dim=1)
-        self._clf_induced_linear_layer = nn.Linear(1000, 2).to(self._device)
-        self._clf_induced_softmax_layer = nn.LogSoftmax(dim=1)
-        self._clf_real_criterion = nn.NLLLoss()
-        self._clf_induced_criterion = nn.NLLLoss()
+                                    color_channels=color_channels, device=self._device).to(self._device)
+        self._discriminator = Discriminator(feature_map_size=feature_map_size,
+                                            color_channels=color_channels).to(self._device)
 
         if (self._device.type == 'cuda') and (n_gpu > 1):
             self._generator = nn.DataParallel(self._generator, list(range(n_gpu)))
             self._discriminator = nn.DataParallel(self._discriminator, list(range(n_gpu)))
             self._clf_real = nn.DataParallel(self._clf_real, list(range(n_gpu)))
             self._clf_induced = nn.DataParallel(self._clf_induced, list(range(n_gpu)))
+
+        # Classifiers for calculating GAN quality index
+        self._clf_real = models.resnet18(pretrained=False).to(self._device)
+        self._clf_induced = models.resnet18(pretrained=False).to(self._device)
+        self._clf_real_linear_layer = nn.Linear(1000, 2).to(self._device)
+        self._clf_real_softmax_layer = nn.LogSoftmax(dim=1)
+        self._clf_induced_linear_layer = nn.Linear(1000, 2).to(self._device)
+        self._clf_induced_softmax_layer = nn.LogSoftmax(dim=1)
+        self._clf_real_criterion = nn.NLLLoss()
+        self._clf_induced_criterion = nn.NLLLoss()
 
         self._generator.apply(self.init_weights)
         self._discriminator.apply(self.init_weights)
@@ -57,7 +57,7 @@ class DCGANEvaluator:
         self._real_label = 1.
         self._fake_label = 0.
 
-        # Setup Adam optimizers for both generator and discriminator
+        # Setup Adam optimizers
         self._discriminator_optimizer = \
             optim.Adam(self._discriminator.parameters(), lr=self._learning_rate, betas=(self._beta1, 0.999))
         self._generator_optimizer = \
@@ -70,7 +70,7 @@ class DCGANEvaluator:
         self._clf_induced_auc = None
         self._auc_scores = []
 
-        self._dsdm = DSDM(drift_detection_level=1.2)
+        self._dsdm = DSDM(drift_detection_level=3.0)
 
     def init_weights(self, model):
         classname = model.__class__.__name__
@@ -107,13 +107,13 @@ class DCGANEvaluator:
                     self._discriminator.zero_grad()
 
                     # Format batch
-                    real_cpu = data[0].to(self._device)
-                    real_label = data[1].to(self._device)
-                    b_size = real_cpu.size(0)
-                    label = torch.full((b_size,), self._real_label, dtype=torch.float, device=self._device).long()
+                    real_images = data[0].to(self._device)
+                    real_labels = data[1].to(self._device)
+                    batch_size = real_images.size(0)
+                    label = torch.full((batch_size,), self._real_label, dtype=torch.float, device=self._device).long()
 
                     # Forward pass real batch through discriminator
-                    output = torch.squeeze(self._discriminator(real_cpu))
+                    output = torch.squeeze(self._discriminator(real_images))
 
                     # Calculate loss on all-real batch
                     discriminator_real_error = self._criterion(output, label)
@@ -124,7 +124,7 @@ class DCGANEvaluator:
 
                     # Train with all-fake batch
                     # Generate batch of latent vectors
-                    noise = torch.randn(b_size, self._latent_vector_length, 1, 1, device=self._device)
+                    noise = torch.randn(batch_size, self._latent_vector_length, 1, 1, device=self._device)
 
                     # Generate fake image batch with generator
                     fake = self._generator(noise)
@@ -179,16 +179,16 @@ class DCGANEvaluator:
                     generator_losses.append(generator_error.item())
                     discriminator_losses.append(discriminator_error.item())
 
-                    self._fixed_noise = torch.randn(b_size, self._latent_vector_length, 1, 1, device=self._device)
+                    self._fixed_noise = torch.randn(batch_size, self._latent_vector_length, 1, 1, device=self._device)
 
                     # Train real data classifier on a single real batch
-                    self.train_clf_real(real_cpu, real_label)
+                    self.train_clf_real(real_images, real_labels)
                     # Generate batch of images and pass them to train GAN-induced classifier
                     generated_images = self._generator(self._fixed_noise)
                     generated_labels = self._clf_real_softmax_layer(self._clf_real_linear_layer(
                         self._clf_real(generated_images)))
                     generated_labels = torch.max(generated_labels, 1)[1]
-                    self.train_clf_gan(generated_images, generated_labels, real_cpu, real_label)
+                    self.train_clf_gan(generated_images, generated_labels, real_images, real_labels)
 
                     # print("AUC: ", self._clf_gan_auc)
                     self._dsdm.add_element(1 - self._clf_induced_auc)

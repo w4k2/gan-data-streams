@@ -1,4 +1,4 @@
-from evaluators import DCGANEvaluator
+from evaluators import DCGANEvaluator, WGANCPEvaluator
 from data import DataProvider
 from visualizers import DataVisualizer
 
@@ -15,12 +15,20 @@ def run():
 
     data_provider = DataProvider()
     data_visualizer = DataVisualizer()
-    gan_trainer = DCGANEvaluator(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
-                                 color_channels=color_channels, n_gpu=n_gpu, data_provider=data_provider,
-                                 data_visualizer=data_visualizer)
+
+    evaluators = [
+        DCGANEvaluator(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
+                       color_channels=color_channels, n_gpu=n_gpu, data_provider=data_provider,
+                       data_visualizer=data_visualizer),
+        WGANCPEvaluator(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
+                        color_channels=color_channels, n_gpu=n_gpu, data_provider=data_provider,
+                        data_visualizer=data_visualizer)
+    ]
 
     dataloaders = data_provider.get_celeba_dataloaders(batch_size=batch_size)
-    gan_trainer.train(dataloaders=dataloaders, epochs_per_concept=epochs_per_concept)
+
+    for evaluator in evaluators:
+        evaluator.train(dataloaders=dataloaders, epochs_per_concept=epochs_per_concept)
 
 
 if __name__ == "__main__":

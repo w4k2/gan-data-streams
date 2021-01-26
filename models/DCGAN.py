@@ -4,10 +4,8 @@ import torch
 
 
 class Generator(nn.Module):
-    def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0,
-                 device=torch.device("cpu")):
+    def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, device=torch.device("cpu")):
         super(Generator, self).__init__()
-        self.n_gpu = n_gpu
         self._device = device
         self._model = nn.Sequential(
             # input is Z, going into a convolution
@@ -41,8 +39,8 @@ class Generator(nn.Module):
         self._neuron_importance = None
         self._importance_level = 0.5
 
-    def forward(self, input):
-        self._layer_activations = [input] + [None] * self._n_layers
+    def forward(self, data):
+        self._layer_activations = [data] + [None] * self._n_layers
         for l_idx in range(self._n_layers):
             self._layer_activations[l_idx + 1] = self._layers[l_idx].forward(self._layer_activations[l_idx])
 
@@ -100,9 +98,8 @@ class Generator(nn.Module):
 
 
 class Discriminator(nn.Module):
-    def __init__(self, feature_map_size=64, color_channels=3, n_gpu=0):
+    def __init__(self, feature_map_size=64, color_channels=3):
         super(Discriminator, self).__init__()
-        self.n_gpu = n_gpu
         self._model = nn.Sequential(
             # input is (color_channels) x 64 x 64
             nn.Conv2d(color_channels, feature_map_size, 4, 2, 1, bias=False),
