@@ -16,19 +16,23 @@ def run():
     data_provider = DataProvider()
     data_visualizer = DataVisualizer()
 
-    evaluators = [
-        DCGANEvaluator(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
-                       color_channels=color_channels, n_gpu=n_gpu, data_provider=data_provider,
-                       data_visualizer=data_visualizer),
-        WGANCPEvaluator(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
-                        color_channels=color_channels, n_gpu=n_gpu, data_provider=data_provider,
-                        data_visualizer=data_visualizer)
+    dataloader_groups = [
+        data_provider.get_celeba_dataloaders(batch_size=batch_size),
+        data_provider.get_cifar10_dataloaders(batch_size=batch_size),
+        data_provider.get_fashion_mnist_dataloaders(batch_size=batch_size)
     ]
 
-    dataloaders = data_provider.get_celeba_dataloaders(batch_size=batch_size)
+    evaluators = [
+        DCGANEvaluator(),
+        WGANCPEvaluator()
+    ]
 
     for evaluator in evaluators:
-        evaluator.train(dataloaders=dataloaders, epochs_per_concept=epochs_per_concept)
+        for dataloaders in dataloader_groups:
+            evaluator.initialize(latent_vector_length=latent_vector_length, feature_map_size=feature_map_size,
+                                 color_channels=color_channels, n_gpu=n_gpu, data_provider=data_provider,
+                                 data_visualizer=data_visualizer)
+            evaluator.train(dataloaders=dataloaders, epochs_per_concept=epochs_per_concept)
 
 
 if __name__ == "__main__":

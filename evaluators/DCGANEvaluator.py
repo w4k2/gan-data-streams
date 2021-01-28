@@ -10,8 +10,49 @@ import torch
 
 class DCGANEvaluator:
 
-    def __init__(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0, data_provider=None,
-                 data_visualizer=None):
+    def __init__(self):
+
+        self._latent_vector_length = None
+        self._device = None
+        self._data_provider = None
+        self._data_visualizer = None
+
+        self._generator = None
+        self._discriminator = None
+
+        # Classifiers for calculating GAN quality index
+        self._clf_real = None
+        self._clf_induced = None
+        self._clf_real_linear_layer = None
+        self._clf_real_softmax_layer = None
+        self._clf_induced_linear_layer = None
+        self._clf_induced_softmax_layer = None
+        self._clf_real_criterion = None
+        self._clf_induced_criterion = None
+
+        # Parameters
+        self._learning_rate = None
+        self._beta1 = None
+        self._criterion = None
+        self._fixed_noise = None
+
+        # Convention for real and fake labels during training
+        self._real_label = None
+        self._fake_label = None
+
+        # Optimizers
+        self._discriminator_optimizer = None
+        self._generator_optimizer = None
+        self._clf_real_optimizer = None
+        self._clf_induced_optimizer = None
+
+        self._clf_induced_auc = None
+        self._auc_scores = []
+
+        self._dsdm = None
+
+    def initialize(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0, data_provider=None,
+                   data_visualizer=None):
 
         self._latent_vector_length = latent_vector_length
         self._device = torch.device("cuda:0" if (torch.cuda.is_available() and n_gpu > 0) else "cpu")
@@ -23,12 +64,6 @@ class DCGANEvaluator:
         self._discriminator = Discriminator(feature_map_size=feature_map_size,
                                             color_channels=color_channels).to(self._device)
 
-        if (self._device.type == 'cuda') and (n_gpu > 1):
-            self._generator = nn.DataParallel(self._generator, list(range(n_gpu)))
-            self._discriminator = nn.DataParallel(self._discriminator, list(range(n_gpu)))
-            self._clf_real = nn.DataParallel(self._clf_real, list(range(n_gpu)))
-            self._clf_induced = nn.DataParallel(self._clf_induced, list(range(n_gpu)))
-
         # Classifiers for calculating GAN quality index
         self._clf_real = models.resnet18(pretrained=False).to(self._device)
         self._clf_induced = models.resnet18(pretrained=False).to(self._device)
@@ -38,6 +73,12 @@ class DCGANEvaluator:
         self._clf_induced_softmax_layer = nn.LogSoftmax(dim=1)
         self._clf_real_criterion = nn.NLLLoss()
         self._clf_induced_criterion = nn.NLLLoss()
+
+        if (self._device.type == 'cuda') and (n_gpu > 1):
+            self._generator = nn.DataParallel(self._generator, list(range(n_gpu)))
+            self._discriminator = nn.DataParallel(self._discriminator, list(range(n_gpu)))
+            self._clf_real = nn.DataParallel(self._clf_real, list(range(n_gpu)))
+            self._clf_induced = nn.DataParallel(self._clf_induced, list(range(n_gpu)))
 
         self._generator.apply(self.init_weights)
         self._discriminator.apply(self.init_weights)
