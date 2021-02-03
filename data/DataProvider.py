@@ -10,11 +10,13 @@ class DataProvider:
             DataLoader(dataset=dataset, batch_size=batch_size, shuffle=False, drop_last=True,
                        sampler=SubsetRandomSampler(indices=list(range(143258)))),
             DataLoader(dataset=dataset, batch_size=batch_size, shuffle=False, drop_last=True,
+                       sampler=SubsetRandomSampler(indices=list(range(70000, 200000)))),
+            DataLoader(dataset=dataset, batch_size=batch_size, shuffle=False, drop_last=True,
                        sampler=SubsetRandomSampler(indices=list(range(143258, 277006)))),
+            DataLoader(dataset=dataset, batch_size=batch_size, shuffle=False, drop_last=True,
+                       sampler=SubsetRandomSampler(indices=list(range(70000, 200000)))),
             DataLoader(dataset=dataset, batch_size=batch_size, shuffle=False, drop_last=True,
                        sampler=SubsetRandomSampler(indices=list(range(143258)))),
-            DataLoader(dataset=dataset, batch_size=batch_size, shuffle=False, drop_last=True,
-                       sampler=SubsetRandomSampler(indices=list(range(143258, 277006)))),
         ]
 
         return dataloaders

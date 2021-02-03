@@ -6,6 +6,7 @@ from torch import nn
 from torch import optim
 from torchvision import utils
 import torch
+import time
 
 
 class DCGANEvaluator:
@@ -50,6 +51,7 @@ class DCGANEvaluator:
         self._auc_scores = []
 
         self._dsdm = None
+        self._heat_idx = 0
 
     def initialize(self, latent_vector_length=100, feature_map_size=64, color_channels=3, n_gpu=0, data_provider=None,
                    data_visualizer=None):
@@ -126,6 +128,7 @@ class DCGANEvaluator:
         img_list = []
         generator_losses = []
         discriminator_losses = []
+        batch_training_times = []
         iteration = 0
 
         print("Starting Training Loop...")
@@ -139,7 +142,7 @@ class DCGANEvaluator:
                 print("Epoch: ", epoch)
                 # For each batch in the dataloader
                 for i, data in enumerate(dataloader, 0):
-
+                    start_time = time.time()
                     ############################
                     # (1) Update discriminator network: maximize log(D(x)) + log(1 - D(G(z)))
                     ###########################
@@ -155,6 +158,10 @@ class DCGANEvaluator:
 
                     # Forward pass real batch through discriminator
                     output = torch.squeeze(self._discriminator(real_images))
+
+                    if self.is_generation_allowed(len(dataloader), i):
+                        # Calculate relevance scores
+                        self.handle_relevance_calculation('real', real_images)
 
                     # Calculate loss on all-real batch
                     discriminator_real_error = self._criterion(output, label)
@@ -174,9 +181,10 @@ class DCGANEvaluator:
                     # Classify all fake batch with discriminator
                     output = torch.squeeze(self._discriminator(fake.detach()))
 
-                    # Calculate relevance scores
-                    # discriminator_pixel_relevance = self._discriminator.get_pixel_layer_relevance()
-                    # self._generator.calculate_relevance(discriminator_pixel_relevance)
+                    if self.is_generation_allowed(len(dataloader), i):
+                        # Calculate relevance scores
+                        self.handle_relevance_calculation('fake', fake)
+                        self._heat_idx += 1
 
                     # Calculate discriminator's loss on the all-fake batch
                     discriminator_fake_error = self._criterion(output, label)
@@ -231,6 +239,8 @@ class DCGANEvaluator:
                     generated_labels = torch.max(generated_labels, 1)[1]
                     self.train_clf_gan(generated_images, generated_labels, real_images, real_labels)
 
+                    batch_training_times.append(time.time() - start_time)
+
                     # print("AUC: ", self._clf_gan_auc)
                     self._dsdm.add_element(1 - self._clf_induced_auc)
                     if self._dsdm.detected_change():
@@ -238,8 +248,9 @@ class DCGANEvaluator:
 
                     self._auc_scores.append(self._clf_induced_auc)
 
+                    self._fixed_noise = torch.randn(64, self._latent_vector_length, 1, 1, device=self._device)
                     # Check how the generator is doing by saving G's output on fixed_noise
-                    if (iteration % 500 == 0) or ((epoch == epochs_per_concept - 1) and (i == len(dataloader) - 1)):
+                    if self.is_generation_allowed(len(dataloader), i):
                         with torch.no_grad():
                             fake = self._generator(self._fixed_noise).detach().cpu()
                         img_list.append(utils.make_grid(fake, padding=2, normalize=True))
@@ -247,8 +258,9 @@ class DCGANEvaluator:
                     iteration += 1
 
         # print("GQI scores: ", self._auc_scores)
-        self._data_visualizer.plot_scores(scores=self._auc_scores)
-        self._data_visualizer.plot_generated_figures(img_list=img_list)
+        # self._data_visualizer.plot_scores(scores=self._auc_scores)
+        # self._data_visualizer.plot_generated_figures(img_list=img_list)
+        return self._auc_scores, img_list, batch_training_times
 
     def train_clf_real(self, inputs, labels):
         self._clf_real_optimizer.zero_grad()
@@ -269,3 +281,15 @@ class DCGANEvaluator:
         loss = self._clf_induced_criterion(outputs, train_labels)
         loss.backward()
         self._clf_induced_optimizer.step()
+
+    def handle_relevance_calculation(self, label, img):
+        discriminator_pixel_relevance = self._discriminator.get_pixel_layer_relevance()
+        # self._generator.calculate_relevance(discriminator_pixel_relevance)
+        relevance_img = discriminator_pixel_relevance[0].sum(axis=0).cpu()
+        handled_img = img[0].cpu()
+        self._data_visualizer.plot_heatmap(relevance_img, handled_img, label, self._heat_idx)
+
+    def is_generation_allowed(self, dataloader_size, iteration):
+        if iteration < 20 or (dataloader_size - iteration) < 20:
+            return True
+        return False

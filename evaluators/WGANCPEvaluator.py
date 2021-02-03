@@ -6,6 +6,7 @@ from torchvision import utils
 import torchvision.models as models
 import torch.nn as nn
 import torch
+import time
 
 
 class WGANCPEvaluator:
@@ -104,6 +105,8 @@ class WGANCPEvaluator:
 
     def train(self, dataloaders, epochs_per_concept=5):
 
+        batch_training_times = []
+
         img_list = []
         iteration = 0
 
@@ -121,6 +124,8 @@ class WGANCPEvaluator:
                 print("Epoch: ", epoch)
                 # For each batch in the dataloader
                 for i, data in enumerate(dataloader, 0):
+
+                    start_time = time.time()
 
                     real_images = data[0].to(self._device)
                     real_labels = data[1].to(self._device)
@@ -191,6 +196,8 @@ class WGANCPEvaluator:
                     generated_labels = torch.max(generated_labels, 1)[1]
                     self.train_clf_gan(generated_images, generated_labels, real_images, real_labels)
 
+                    batch_training_times.append(time.time() - start_time)
+
                     # print("AUC: ", self._clf_gan_auc)
                     self._dsdm.add_element(1 - self._clf_induced_auc)
                     if self._dsdm.detected_change():
@@ -199,7 +206,8 @@ class WGANCPEvaluator:
                     self._auc_scores.append(self._clf_induced_auc)
 
                     # Check how the generator is doing by saving G's output on fixed_noise
-                    if (iteration % 500 == 0) or ((epoch == epochs_per_concept - 1) and (i == len(dataloader) - 1)):
+                    self._fixed_noise = torch.randn(64, self._latent_vector_length, 1, 1, device=self._device)
+                    if self.is_generation_allowed(len(dataloader), i):
                         with torch.no_grad():
                             fake = self._generator(self._fixed_noise).detach().cpu()
                         img_list.append(utils.make_grid(fake, padding=2, normalize=True))
@@ -207,7 +215,8 @@ class WGANCPEvaluator:
                     iteration += 1
 
         self._data_visualizer.plot_scores(scores=self._auc_scores)
-        self._data_visualizer.plot_generated_figures(img_list=img_list)
+        # self._data_visualizer.plot_generated_figures(img_list=img_list)
+        return self._auc_scores, img_list, batch_training_times
 
     def train_clf_real(self, inputs, labels):
         self._clf_real_optimizer.zero_grad()
@@ -228,3 +237,8 @@ class WGANCPEvaluator:
         loss = self._clf_induced_criterion(outputs, train_labels)
         loss.backward()
         self._clf_induced_optimizer.step()
+
+    def is_generation_allowed(self, dataloader_size, iteration):
+        if iteration < 20 or (dataloader_size - iteration) < 20:
+            return True
+        return False

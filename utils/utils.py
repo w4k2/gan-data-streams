@@ -1,6 +1,7 @@
 import numpy
 import copy
 from matplotlib import pyplot as plt
+from torchvision.utils import save_image
 import torch.nn as nn
 
 # --------------------------------------
@@ -28,22 +29,26 @@ def loaddata():
 # --------------------------------------
 
 
-def heatmap(R,sx,sy):
+def heatmap(R, type, sx, sy, real_image, idx):
 
     b = 10*((numpy.abs(R)**3.0).mean()**(1.0/3))
 
     from matplotlib.colors import ListedColormap
     my_cmap = plt.cm.seismic(numpy.arange(plt.cm.seismic.N))
-    my_cmap[:,0:3] *= 0.85
+    my_cmap[:, 0:3] *= 0.85
     my_cmap = ListedColormap(my_cmap)
-    #plt.figure(figsize=(sx,sy))
-    #plt.subplots_adjust(left=0,right=1,bottom=0,top=1)
+    fig = plt.figure(figsize=(sx, sy))
+    plt.subplots_adjust(left=0, right=1, bottom=0, top=1)
     plt.axis('off')
-    plt.imshow(R,cmap=my_cmap,vmin=-b,vmax=b,interpolation='nearest')
-    plt.show()
+    plt.imshow(R, cmap=my_cmap, vmin=-b, vmax=b, interpolation='nearest')
+    filepath = './data/img_heatmap/' + str(idx) + type + '_heatmap.png'
+    plt.savefig(filepath)
+    filepath = './data/img_heatmap/' + str(idx) + type + '.png'
+    save_image(real_image, filepath)
+    plt.close(fig)
 
 
-def digit(X,sx,sy):
+def digit(X, sx, sy):
 
     plt.figure(figsize=(sx,sy))
     plt.subplots_adjust(left=0,right=1,bottom=0,top=1)

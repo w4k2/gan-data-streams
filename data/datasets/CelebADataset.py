@@ -52,11 +52,6 @@ class CelebADataset:
         x1, y1 = shuffle(x1, y1)
         x2, y2 = shuffle(x2, y2)
 
-        # x1_split = np.array_split(x1, 2)
-        # y1_split = np.array_split(y1, 2)
-        # x2_split = np.split(x2, 2)
-        # y2_split = np.split(y2, 2)
-
         x = np.concatenate((x1, x2))
         y = np.concatenate((y1, y2))
 
