@@ -65,4 +65,4 @@ class DataVisualizer:
                 i += 1
 
     def plot_heatmap(self, relevance_img, img, label, img_index):
-        heatmap_utils.heatmap(relevance_img, label, 0.64, 0.64, img, img_index)
+        heatmap_utils.heatmap(relevance_img, label, 3.5, 3.5, img, img_index)

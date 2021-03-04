@@ -5,3 +5,5 @@ visualizers/*.mp4
 data/datasets/celeba/
 data/datasets/cifar10/
 data/datasets/fashion-mnist/
+data/img_heatmap/
+data/output/

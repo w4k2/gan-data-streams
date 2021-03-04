@@ -285,7 +285,8 @@ class DCGANEvaluator:
     def handle_relevance_calculation(self, label, img):
         discriminator_pixel_relevance = self._discriminator.get_pixel_layer_relevance()
         # self._generator.calculate_relevance(discriminator_pixel_relevance)
-        relevance_img = discriminator_pixel_relevance[0].sum(axis=0).cpu()
+        import numpy as np
+        relevance_img = np.array(discriminator_pixel_relevance[0].cpu()).sum(axis=0)
         handled_img = img[0].cpu()
         self._data_visualizer.plot_heatmap(relevance_img, handled_img, label, self._heat_idx)
 

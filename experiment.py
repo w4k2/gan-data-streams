@@ -46,6 +46,9 @@ def run():
     data_visualizer.save_gan_scores(score_lists)
     data_visualizer.save_generated_images(img_lists)
 
+    for scores in score_lists:
+        print("Mean score: ", np.mean(scores))
+
     for times in time_lists:
         print("Mean time: ", np.mean(times))
 

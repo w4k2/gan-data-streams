@@ -1,5 +1,6 @@
 from utils import utils
 from torch import nn
+import numpy as np
 import torch
 
 
@@ -79,7 +80,7 @@ class Generator(nn.Module):
                 # Layer-wise Relevance Propagation: An Overview
                 # in Explainable AI, Springer LNCS, vol. 11700, 2019
                 z_k = incr(utils.newlayer(self._layers[l_idx], rho).forward(self._layer_activations[l_idx]))  # step 1
-                s_k = (self._layer_activations[l_idx + 1] / z_k).data  # step 2
+                s_k = (self._relevance_scores[l_idx + 1] / z_k).data  # step 2
                 (z_k * s_k).sum().backward()
                 c_j = self._layer_activations[l_idx].grad  # step 3
                 self._relevance_scores[l_idx] = (self._layer_activations[l_idx] * c_j).data  # step 4
@@ -139,9 +140,10 @@ class Discriminator(nn.Module):
         best_matching_neuron_idx = self._layer_activations[-1].argmax(1)
         last_layer_activations = torch.zeros(self._layer_activations[-1].shape)
 
-        last_layer_activations[best_matching_neuron_idx] = 1.0
+        for idx, best_matching_neuron in enumerate(best_matching_neuron_idx):
+            last_layer_activations[idx][best_matching_neuron] = 1.0
 
-        self._relevance_scores = [None] * self._n_layers + [last_layer_activations.data]
+        self._relevance_scores = [torch.Tensor().cuda()] * self._n_layers + [torch.Tensor(last_layer_activations.data).cuda()]
 
         for l_idx in range(1, self._n_layers)[::-1]:
             # Loop is not applicable to the pixel layer, which requires different rule
@@ -165,8 +167,8 @@ class Discriminator(nn.Module):
                 #  G. Montavon, A. Binder, S. Lapuschkin, W. Samek, K.-R. Müller
                 # Layer-wise Relevance Propagation: An Overview
                 # in Explainable AI, Springer LNCS, vol. 11700, 2019
-                z_k = incr(utils.newlayer(self._layers[l_idx], rho).forward(self._layer_activations[l_idx]))  # step 1
-                s_k = (self._layer_activations[l_idx + 1] / z_k).data  # step 2
+                z_k = incr(utils.newlayer(self._layers[l_idx], rho).forward(self._layer_activations[l_idx]))
+                s_k = (self._relevance_scores[l_idx + 1] / z_k).data  # step 2
                 (z_k * s_k).sum().backward()
                 c_j = self._layer_activations[l_idx].grad  # step 3
                 self._relevance_scores[l_idx] = (self._layer_activations[l_idx] * c_j).data  # step 4
